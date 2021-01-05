@@ -2,8 +2,8 @@
 
 
 mail = {
-    'sender': 'xx@qq.com',
-    'host': 'smtp.qq.com',
+    'sender': 'xx@163.com',
+    'host': 'smtp.163.com',
     'receivers': ['xx@qq.com', 'xx@qq.com'],
     'password': 'xx',
     'subject_prefix': '豆瓣爬虫租房'
@@ -30,8 +30,8 @@ groups = [
 #locations = ('兴东', '西丽',)
 locations = ('兴东', '西丽', '茶光', '珠光', '留仙洞', '西丽湖', '宝安中心', '宝中')
 
-exclude_words = ('求租', '合租', '室友', '一房一厅', '一室一卫', 
-                 '一室一厅', '单间', '1室1卫', '1房1厅', '1室1厅' '限女生',
-                 '限男生', '次卧', '已租', '已转', '单房')
+exclude_words = ('求租', '合租', '招租', '室友', '一房一厅', '一室一卫', 
+                 '一室一厅', '单间', '1室1卫', '1房1厅', '1室1厅' '女生',
+                 '男生', '次卧', '已租', '已转', '单房', '主卧')
 
 time_require = 72  # latest xx hour 

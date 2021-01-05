@@ -40,8 +40,12 @@ class DoubanSpider(object):
 
     search_url = 'http://www.douban.com/group/search'
     search_required_params = dict(cat=1013, sort='time')
+    error_flag = 0
 
     def get_room_url_title_list(self, group_id, query):
+        urls = []
+        titles = []
+
         params = dict(group=group_id, q=query, **self.search_required_params)
         response = requests.get(
             url=self.search_url, params=params,
@@ -51,6 +55,8 @@ class DoubanSpider(object):
             logger.error(
                 '查询房子接口失败 url: {} rsp: {}'.format(self.search_url, response)
             )
+            self.error_flag = 1
+            return urls, titles
 
         root = etree.HTML(response.text)
         # xpath = '//table[@class="olt"]//a[@title]'
@@ -63,18 +69,23 @@ class DoubanSpider(object):
         xpath = '//table[@class="olt"]//td[@class="td-time"]'
         time_nodes = root.xpath(xpath)
         now_time = datetime.now()
+ 
         for node, tnode in zip(link_nodes, time_nodes):
             pt = tnode.get('title')
             pub_time = datetime.strptime(pt, '%Y-%m-%d %H:%M:%S')
             delta_hour = (now_time - pub_time).total_seconds() / 3600
             if delta_hour > time_require:
                 continue
-            yield node.get('href'), node.get('title')
+            urls.append(node.get('href'))
+            titles.append(node.get('title'))
+            #yield node.get('href'), node.get('title')
+        return urls, titles
 
     def get_room_desc_div(self, url):
         response = requests.get(url=url, headers=self.default_headers)
         if response.status_code != 200:
             logger.error('获取房子接口失败, url: {} rsp: {}'.format(url, response))
+            self.error_flag = 1
 
         root = etree.HTML(response.content)
         xpath = '//div[@class="topic-content clearfix"]'
@@ -83,6 +94,7 @@ class DoubanSpider(object):
             return etree.tostring(div_element).decode()
         except:
             logger.error('获取房子接口失败, url: {} rsp: {} {}'.format(url, response, traceback.format_exc()))
+            self.error_flag = 1
 
 class Diff(object):
 
@@ -99,11 +111,14 @@ class Diff(object):
             return
         old_titles = list(set(self.old_dicts.values()))
         added_titles = []
+        urls = []
         for url, title in self.new_dicts.items():
             # 根据字符串相似度来选出新帖子
             if not difflib.get_close_matches(title, old_titles + added_titles, cutoff=0.6):
                 added_titles.append(title)
-                yield url, title
+                urls.append(url)
+                #yield url, title
+        return urls, added_titles
 
     def _load_old_items_from_disk(self):
         if not os.path.isfile(self.filepath):
@@ -118,20 +133,32 @@ class Diff(object):
 
 
 def get_all_group_rooms():
+    valid_urls=[]
+    valid_titles=[]
     for group_id, group_name in groups:
         for location in locations:
             logger.info('获取豆瓣小组:{} with 地点 {}'.format(group_name, location))
-            room_list = DoubanSpider().get_room_url_title_list(group_id, location)
-            for url, title in room_list:
+            spider = DoubanSpider()
+            urls, titles = spider.get_room_url_title_list(group_id, location)
+            if spider.error_flag != 0:
+                return None, None
+            for i in range(len(urls)):
+                title = titles[i]
                 if not any([x in title for x in exclude_words]):
-                    yield url, title
-            time.sleep(random.randint(1, 3))
+                    valid_urls.append(urls[i])
+                    valid_titles.append(titles[i])
+                    #yield url, title
+            time.sleep(random.randint(3, 6))
+    return valid_urls, valid_titles
 
 
 def get_new_rooms():
-    rooms_dict = dict(get_all_group_rooms())
-    added_rooms = Diff(rooms_dict).get_added_items()
-    return added_rooms
+    urls, titles = get_all_group_rooms()
+    if urls is None or titles is None:
+        return urls, titles
+    rooms_dict = dict(zip(urls, titles))
+    urls, titles = Diff(rooms_dict).get_added_items()
+    return urls, titles
 
 
 def send_room_mail(room_url, room_title):
@@ -194,17 +221,17 @@ def send_room_list_mail(room_urls, room_titles):
 
 def monitor_rooms():
     while True:
-        new_rooms = get_new_rooms()
-        urls = []
-        titles = []
-        for url, title in new_rooms:
-            urls.append(url)
-            titles.append(title)
-            # send_room_mail(url, title)
-            # time.sleep(5)
-        if len(urls) > 0:
+        now_time = datetime.now()
+        if now_time.hour < 8 or now_time.hour > 23:
+            time.sleep(600)
+            continue
+
+        urls, titles = get_new_rooms()
+        if urls is None or titles is None:
+            return
+        elif len(urls) > 0:
             send_room_list_mail(urls, titles)
-        time.sleep(60 * random.randint(5, 10))
+        time.sleep(60 * random.randint(10, 30))
 
 
 if __name__ == '__main__':
